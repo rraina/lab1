@@ -213,8 +213,26 @@ netis_sockinit()
    * socket and store it in the local variable "self".
    */
 
+  if( getsockname(sd, (struct sockaddr *) &self, sizeof(self)) == -1 ) {
+    perror("getsockname");
+    printf("Error getting port from socket");
+    abort();
+  }
+
   /* Find out the FQDN of the current host and store it in the local
      variable "sname" */
+  
+  struct hostent *cp = NULL;
+  
+  cp = gethostbyaddr((char *) &self.sin_addr, sizeof(struct in_addr), AF_INET);
+
+  if( !(cp && cp->h_name) ) {
+    perror("gethostbyaddr");
+    printf("Error get hostname from sin_addr\n");
+    abort();
+  }
+  
+  strcpy(&sname, cp->hname);
 
   /* inform user which port this peer is listening on */
   fprintf(stderr, "netis address is %s:%d\n", sname, ntohs(self.sin_port));
