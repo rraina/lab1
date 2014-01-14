@@ -54,8 +54,6 @@ using namespace std;
 #define NETIS_MSS      1440
 #define NETIS_USLEEP 500000    // 500 ms
 
-#define QLEN 100
-
 char NETIS_IMVERS;
 
 void
@@ -203,7 +201,7 @@ netis_sockinit()
   
   /* listen on socket */
   
-  if( listen(sd, QLEN) < 0 ) {
+  if( listen(sd, NETIS_QLEN) < 0 ) {
     perror("error listening");
     abort();
   }
@@ -212,8 +210,10 @@ netis_sockinit()
    * Obtain the ephemeral port assigned by the OS kernel to this
    * socket and store it in the local variable "self".
    */
+  
+  int addr_len = sizeof(self);
 
-  if( getsockname(sd, (struct sockaddr *) &self, sizeof(self)) == -1 ) {
+  if( getsockname(sd, (struct sockaddr *) &self, (socklen_t *) &addr_len) == -1 ) {
     perror("getsockname");
     printf("Error getting port from socket");
     abort();
@@ -221,18 +221,12 @@ netis_sockinit()
 
   /* Find out the FQDN of the current host and store it in the local
      variable "sname" */
-  
-  struct hostent *cp = NULL;
-  
-  cp = gethostbyaddr((char *) &self.sin_addr, sizeof(struct in_addr), AF_INET);
 
-  if( !(cp && cp->h_name) ) {
+  if( gethostname(sname, NETIS_MAXFNAME + 1) ) {
     perror("gethostbyaddr");
     printf("Error get hostname from sin_addr\n");
     abort();
   }
-  
-  strcpy(&sname, cp->hname);
 
   /* inform user which port this peer is listening on */
   fprintf(stderr, "netis address is %s:%d\n", sname, ntohs(self.sin_port));
@@ -261,9 +255,27 @@ netis_accept(int sd)
    * Use the variable "td" to hold the new connected socket.
   */
 
+  int addr_len = sizeof(client);
+
+  td = accept(sd, (struct sockaddr *) &client, (socklen_t *) &addr_len);
+
+  if(td < 0) {
+    perror("Error in accepting connection");
+    abort();
+  }
+
   /* make the socket wait for PR_LINGER time unit to make sure
      that all data sent has been delivered when closing the socket */
-  
+ 
+  struct linger so_linger;
+  so_linger.l_onoff = true;
+  so_linger.l_linger = NETIS_LINGER;
+
+  if( setsockopt(td, SOL_SOCKET, SO_LINGER, &so_linger, sizeof(so_linger)) < 0 ) {
+    perror("PR_LINGER");
+    abort();
+  }
+
   /* inform user of connection */
   cp = gethostbyaddr((char *) &client.sin_addr, sizeof(struct in_addr), AF_INET);
   fprintf(stderr, "Connected from client %s:%d\n",
@@ -298,6 +310,11 @@ netis_imgsend(int td, imsg_t *imsg, LTGA *image, long img_size)
   /* Task 2: YOUR CODE HERE
    * Send the imsg packet to client connected to socket td.
    */
+   
+  if( send(td, (void *) imsg, sizeof(imsg_t), 0) < 0 ) {
+    perror("Error sending imsg_t");
+    abort();
+  }
 
   segsize = img_size/NETIS_NUMSEG;                     /* compute segment size */
   segsize = segsize < NETIS_MSS ? NETIS_MSS : segsize; /* but don't let segment be too small*/
@@ -311,6 +328,15 @@ netis_imgsend(int td, imsg_t *imsg, LTGA *image, long img_size)
      * Send one segment of data of size segsize at each iteration.
      * The last segment may be smaller than segsize
     */
+    int send_size = min((long) segsize, left);
+    int offset = img_size - left;
+
+    if ( (bytes = send(td, (void *) (ip + offset), send_size, 0)) < 0 ) {
+      perror("Error sending image segment");
+      abort();
+    }
+    
+
 
     fprintf(stderr, "netis_send: size %d, sent %d\n", (int) left, bytes);
     usleep(NETIS_USLEEP);
