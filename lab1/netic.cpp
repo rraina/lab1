@@ -183,6 +183,10 @@ netic_recvimsg()
     abort();
   }
 
+  imsg.im_width = ntohs(imsg.im_width);
+  imsg.im_height = ntohs(imsg.im_height);
+  imsg.im_format = ntohs(imsg.im_format);
+
   return;
 }
 
